@@ -9,6 +9,8 @@ from tensorflow.keras.models import Sequential
 from sklearn.preprocessing import MinMaxScaler
 from utils import get_train_val_test, get_features_labels
 
+EPOCHS = 10
+
 
 def data():
     df_train, df_val, _ = get_train_val_test()
@@ -45,19 +47,24 @@ def model(X_train, y_train, X_val, y_val):
         optim = sgd
 
     model.compile(loss='categorical_crossentropy', metrics=['accuracy'], optimizer=optim)
+
+    callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=4)
     model.fit(X_train, y_train,
               batch_size={{choice([32, 64, 128])}},
               epochs=5,
               verbose=2,
-              validation_data=(X_val, y_val))
+              validation_data=(X_val, y_val),
+              callbacks=[callback]
+              )
     score, acc = model.evaluate(X_val, y_val, verbose=0)
     print("Model architecture:", model.summary())
     print('Test accuracy:', acc)
     return {'loss': -acc, 'status': STATUS_OK, 'model': model}
 
 
-best_run, best_model = optim.minimize(model=model,
-                                      data=data,
-                                      algo=tpe.suggest,
-                                      max_evals=30,
-                                      trials=Trials())
+if __name__ == '__main__':
+    best_run, best_model = optim.minimize(model=model,
+                                          data=data,
+                                          algo=tpe.suggest,
+                                          max_evals=30,
+                                          trials=Trials())
