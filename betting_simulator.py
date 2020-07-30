@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from utils import get_features_labels, construct_full_match_sequence
+import utils
 
 
 class BettingSimulator:
@@ -62,12 +62,13 @@ class BettingSimulator:
                 # scale input array
                 if self.is_lstm:
                     event = self.events[event_id]
-                    X = construct_full_match_sequence(event, minute, minute_odds=self.minute_odds,
-                                                      start_odds=self.start_odds)
+                    X = utils.construct_full_match_sequence(event, minute, minute_odds=self.minute_odds,
+                                                            start_odds=self.start_odds)
                 else:
-                    X, _ = get_features_labels(row, minute_odds=self.minute_odds,
-                                               start_odds=self.start_odds).to_numpy().astype(np.float32)
-                    X = np.multiply(X, self.scaler).reshape(1, X.shape[1])
+                    X = utils.get_features_for_minute(row, minute_odds=self.minute_odds,
+                                                      start_odds=self.start_odds).to_numpy().astype(np.float32)
+
+                    X = np.multiply(X, self.scaler).reshape(1, X.shape[0])
 
                 prediction = self.model.predict(X)
                 outcome = row["result"]
@@ -103,12 +104,10 @@ class BettingSimulator:
 
                     if outcome == 1:
                         self.balance += stake * (home_odds - 1.0)
-                        if self.balance > self.highest_balance:
-                            self.highest_balance = self.balance
                     else:
                         self.balance -= stake
-                        if self.balance < self.lowest_balance:
-                            self.lowest_balance = self.balance
+
+                    print("Balance:", self.balance)
 
                 # away win bet opportunity
                 elif self._is_good_odds(away_odds, exp_away_odds):
@@ -131,18 +130,16 @@ class BettingSimulator:
 
                     if outcome == 2:
                         self.balance += stake * (away_odds - 1.0)
-                        if self.balance > self.highest_balance:
-                            self.highest_balance = self.balance
                     else:
                         self.balance -= stake
-                        if self.balance < self.lowest_balance:
-                            self.lowest_balance = self.balance
+
+                    print("Balance:", self.balance)
 
                 # draw bet opportunity
                 elif self.draw_bets and self._is_good_odds(draw_odds, exp_draw_odds):
                     print("Draw bet: event: %d | minute %d | odds: 1:%f x:%f 2:%f | score: %d-%d === Outcome: %d" % (
                         event_id, minute, home_odds, draw_odds, away_odds, home_goals, away_goals, outcome))
-                    stake = self.get_stake_amount(away_win_prob, away_odds)
+                    stake = self.get_stake_amount(draw_prob, draw_odds)
 
                     bet = {
                         "event_id": event_id,
@@ -159,12 +156,20 @@ class BettingSimulator:
 
                     if outcome == 0:
                         self.balance += stake * (draw_odds - 1.0)
-                        if self.balance > self.highest_balance:
-                            self.highest_balance = self.balance
+
                     else:
                         self.balance -= stake
-                        if self.balance < self.lowest_balance:
-                            self.lowest_balance = self.balance
+
+                    print("Balance:", self.balance)
+
+                if self.balance > self.highest_balance:
+                    self.highest_balance = self.balance
+
+                if self.balance < self.lowest_balance:
+                    self.lowest_balance = self.balance
+
+                if self.balance <= self.start_balance * 0.1:
+                    return
 
     def summary(self):
         print("Start balance: %d" % self.start_balance)
@@ -207,8 +212,13 @@ class BettingSimulator:
             return False
 
     def calculate_kelly(self, win_prob, odds):
-        stake_percent = ((win_prob * odds - 1) / (odds - 1))
-        return self.balance * stake_percent
+        stake_percent = (odds * win_prob - 1) / (odds - 1)
+        if stake_percent > 0.03:
+            stake_percent = 0.03
+        if stake_percent <= 0:
+            return 0
+        else:
+            return self.balance * stake_percent
 
     def get_stake_amount(self, win_prob, odds):
         if self.kelly_criterion:
@@ -219,7 +229,7 @@ class BettingSimulator:
         return stake
 
     def get_scaler(self):
-        n_features = 18
+        n_features = 19
         if self.minute_odds:
             n_features += 3
         if self.start_odds:

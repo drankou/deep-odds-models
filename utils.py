@@ -37,6 +37,17 @@ def get_features_labels(df, minute_odds=False, start_odds=False):
     return X, y
 
 
+def get_features_for_minute(data, minute_odds=False, start_odds=False):
+    X = data[1:-7]
+
+    if minute_odds:
+        X = X.append(data[-7:-4])
+    if start_odds:
+        X = X.append(data[-4:-1])
+
+    return X
+
+
 def construct_full_match_sequence(event, minute, minute_odds=False, start_odds=False):
     to_minute_sequence = event.iloc[:int(minute) + 1, 2:-7]
     if minute_odds:
